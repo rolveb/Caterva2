@@ -1819,6 +1819,10 @@ async def htmx_path_info(
 
     # Tabs: plugin defined
     vlmeta = getattr(getattr(meta, "schunk", meta), "vlmeta", {})
+    try:
+        context["units"] = vlmeta.get("units", None) if vlmeta else None
+    except Exception:
+        context["units"] = None
     contenttype = vlmeta.get("contenttype") or guess_dset_ctype(path, meta)
     plugin = plugins.get(contenttype)
     if plugin:
@@ -1921,6 +1925,27 @@ async def htmx_path_view(
     shape = arr.shape
     ndims = len(shape)
 
+    # Read dimension names from vlmeta if available
+    dim_names = None
+    try:
+        _vlmeta = getattr(getattr(arr, "schunk", arr), "vlmeta", {})
+        if "dims" in _vlmeta:
+            _dims_val = _vlmeta["dims"]
+            if isinstance(_dims_val, (list, tuple)) and len(_dims_val) == ndims:
+                dim_names = list(_dims_val)
+    except Exception:
+        pass
+    if dim_names is None:
+        dim_names = [f"dim {i}" for i in range(ndims)]
+
+    # Read units from vlmeta if available
+    _units = None
+    try:
+        if "units" in _vlmeta:
+            _units = _vlmeta["units"]
+    except Exception:
+        pass
+
     # Set of dimensions that define the window
     # TODO Allow the user to choose the window dimensions
     has_ndfields = hasattr(arr, "fields") and arr.fields != {}
@@ -2005,6 +2030,8 @@ async def htmx_path_view(
         "sortby": sortby,
         "shape": shape,
         "tags": tags if len(tags) == 0 else tags[0],
+        "dim_names": dim_names,
+        "units": _units,
     }
     return templates.TemplateResponse(request, "info_view.html", context)
 

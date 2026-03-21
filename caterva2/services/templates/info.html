@@ -1,4 +1,7 @@
 <h3>{{ path }}</h3>
+{% if shape is defined and shape %}
+<p class="text-muted mb-1">shape = {{ shape }}{% if units %} &mdash; units: {{ units }}{% endif %}</p>
+{% endif %}
 
 <ul class="nav nav-tabs" id="tabs">
     {% for tab in tabs %}
