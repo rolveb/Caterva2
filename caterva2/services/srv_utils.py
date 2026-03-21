@@ -217,13 +217,57 @@ def iterdir(root):
         yield path, relpath
 
 
+def expand_b2z(b2z_path):
+    """Extract a .b2z archive to a sibling directory if not already extracted.
+
+    A .b2z file is a zip archive containing blosc2 .b2nd files (created by
+    xarray_blosc2.freeze_dataset). This function extracts it to a directory
+    with the same name minus the .b2z suffix, e.g.:
+
+        data/2026W09_p3_steel.b2z -> data/2026W09_p3_steel/
+
+    The extraction is skipped if the directory already exists and is newer
+    than the .b2z file.
+
+    Returns the path to the extracted directory.
+    """
+    import zipfile
+
+    b2z_path = pathlib.Path(b2z_path)
+    target_dir = b2z_path.with_suffix("")
+
+    # Skip if already extracted and up to date
+    if target_dir.is_dir():
+        b2z_mtime = b2z_path.stat().st_mtime
+        dir_mtime = target_dir.stat().st_mtime
+        if dir_mtime >= b2z_mtime:
+            return target_dir
+
+    # Extract
+    target_dir.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(b2z_path, "r") as zf:
+        zf.extractall(target_dir)
+
+    return target_dir
+
+
 def walk_files(root, exclude=None):
     if exclude is None:
         exclude = set()
 
     if root is not None:
+        # Auto-expand any .b2z archives before walking
+        for b2z in list(root.glob("**/*.b2z")):
+            try:
+                expand_b2z(b2z)
+            except Exception:
+                pass  # skip corrupt archives
+
         for path in root.glob("**/*"):
             if path.is_file():
+                # Skip .b2z files themselves (their contents are served from extracted dirs)
+                if path.suffix == ".b2z":
+                    continue
                 relpath = path.relative_to(root)
                 if str(relpath) not in exclude:
                     yield path, relpath

@@ -1258,8 +1258,15 @@ async def unfold_file(
             detail = "No arrays found in HDF5 file"
             raise fastapi.HTTPException(detail=detail, status_code=400)
         dirname = abspath.with_suffix("")
+    elif abspath.suffix == ".b2z":
+        # Extract blosc2 zip archive to sibling directory
+        dirname = srv_utils.expand_b2z(abspath)
+        b2nd_files = list(dirname.glob("**/*.b2nd")) + list(dirname.glob("**/*.b2frame"))
+        if len(b2nd_files) == 0:
+            detail = "No blosc2 arrays found in .b2z archive"
+            raise fastapi.HTTPException(detail=detail, status_code=400)
     else:
-        detail = "Target file must be a zip, tar or hdf5 container"
+        detail = "Target file must be a zip, tar, hdf5 or b2z container"
         raise fastapi.HTTPException(detail=detail, status_code=400)
 
     # Check quota
