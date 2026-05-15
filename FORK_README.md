@@ -50,13 +50,78 @@ Changes:
 This matches the `dims`/`units`/`long_name` conventions that
 `xarray_blosc2.save_dataset()` writes into each `.b2nd`.
 
-## Planned (not yet on this branch)
+## Deferred work — prompts for the next contributor
 
-- **Serve non-`.b2nd` files** so a `recipe.yaml` next to the arrays can be
-  fetched directly. Today the API filters listings to `.b2nd`.
-- **JupyterLite viewer plug-in slot** so the web viewer can defer to
-  custom renderers based on dataset metadata (e.g. ISO-8601 time-series,
-  geographic CRS, mesh data).
+These are designed-out but not yet implemented. Each is a self-contained
+prompt: drop it into Claude / a contributor and they can pick it up.
+
+### Prompt A — Serve non-`.b2nd` files
+
+> Today `/api/list/<root>/<path>/` filters listings to `.b2nd` and
+> `/api/datasets/.../<file>.json` returns 404 even when the file exists
+> on disk. Producers writing `recipe.yaml` / `dataset.json` next to their
+> arrays cannot retrieve them through Caterva2.
+>
+> Add a second endpoint `/api/files/<root>/<path>` that streams any file
+> in the published root (with the same auth as `/api/datasets/`), and
+> extend `walk_files` in `srv_utils.py` to optionally include non-`.b2nd`
+> entries when a `include_all=true` query param is set. Keep the default
+> listing behaviour unchanged for backwards compatibility.
+>
+> Acceptance: `curl http://host:8081/api/files/@public/path/recipe.yaml`
+> returns the raw YAML; `curl '.../api/list/@public/path/?include_all=true'`
+> returns a list including `recipe.yaml` alongside the `.b2nd` entries.
+> Unit test exercises both endpoints against a temp root containing one
+> `.b2nd` and one `.yaml`.
+
+### Prompt B — Pluggable viewer registry + JupyterLite kernel
+
+> The current web viewer in `info_view.html` (1-D SVG line chart, 2-D
+> canvas heatmap — see commit 634e521) hard-codes two render strategies.
+> Real datasets need many more: ISO-8601 time-series scrubber, folium /
+> deck.gl maps when `attrs.crs` is set, UGRID mesh viewer, multi-channel
+> uncertainty plots, etc.
+>
+> Build a plug-in surface where each viewer declares a predicate over
+> `vlmeta` / dataset attrs and renders into the existing info page slot.
+> Two layers:
+>
+> 1. **Server-side discovery**
+>    - `caterva2/services/viewers.py`: load viewers from
+>      `importlib.metadata.entry_points(group="caterva2.viewers")` plus
+>      a static `caterva2-viewers.toml` mapping name → HTML/JS template.
+>    - New endpoint `GET /api/viewers/<root>/<path>` returns the list of
+>      matching viewers for that dataset as
+>      `[{name, kind, predicate_match, url}]`, in priority order. `kind`
+>      is `"html"` (static template) or `"jupyterlite"` (Pyodide kernel).
+>
+> 2. **Client-side rendering**
+>    - `info_view.html` fetches `/api/viewers/...` first; if a match is
+>      returned, embeds it (iframe for jupyterlite, inline for html).
+>    - Falls back to the current built-in SVG / canvas when no plug-in
+>      matches — no regression for the default case.
+>
+> 3. **JupyterLite asset bundle** (optional, behind a `[jupyterlite]`
+>    extra in `pyproject.toml`): ship a minimal JupyterLite distribution
+>    under `caterva2/services/static/jupyterlite/` so a viewer of kind
+>    `"jupyterlite"` can load Python code in the browser, `import
+>    xarray_blosc2`, fetch the dataset via the C2Array HTTP client, and
+>    render with whatever the user already uses in notebooks.
+>
+> Reference implementations to wire up:
+> - `xarray_blosc2` exposes a `register_viewer(name, predicate, render)`
+>   API. Caterva2 plug-ins can re-use those Python renderers verbatim
+>   through the JupyterLite kernel.
+> - `iso8601-intervals` ships an ISO-8601 time-series scrubber that
+>   would register as the first concrete plug-in.
+>
+> Acceptance: with no plug-ins installed, the info page behaves exactly
+> as today. With `pip install iso8601-intervals[viewer]`, opening a
+> dataset whose `vlmeta["dims"]` contains `"time"` renders the
+> interval scrubber instead of the plain SVG. Toggleable per-dataset
+> via a `?viewer=default` query string for debugging.
+
+Both prompts are independent — A can land before B or vice versa.
 
 ## Branches
 
